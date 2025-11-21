@@ -1,4 +1,4 @@
-# P2P File Share Pro 🚀
+# P2P File Share Pro 
 
 A production-ready, peer-to-peer file sharing application with end-to-end encryption, resume capability, and optimized memory management for large files.
 

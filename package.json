@@ -1,0 +1,61 @@
+{
+  "name": "p2p-file-share-pro",
+  "version": "2.0.0",
+  "description": "Production-ready peer-to-peer file sharing with encryption and resume capability",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "rm -rf .next out node_modules",
+    "analyze": "ANALYZE=true next build"
+  },
+  "dependencies": {
+    "next": "^14.2.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "peerjs": "^1.5.2",
+    "framer-motion": "^10.16.16",
+    "lucide-react": "^0.294.0",
+    "react-dropzone": "^14.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@types/react": "^18.2.46",
+    "@types/react-dom": "^18.2.18",
+    "@types/peerjs": "^1.0.0",
+    "typescript": "^5.3.3",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.32",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.2.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "p2p",
+    "file-sharing",
+    "webrtc",
+    "encryption",
+    "secure-transfer",
+    "peer-to-peer",
+    "large-files",
+    "resume-transfer",
+    "browser-to-browser"
+  ],
+  "author": "P2P File Share",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/p2p-file-share-pro"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/p2p-file-share-pro/issues"
+  }
+}

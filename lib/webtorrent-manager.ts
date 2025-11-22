@@ -56,8 +56,9 @@ export class WebTorrentManager {
         if (file) {
           file.getBlob((err, blob) => {
             if (err) {
-              if (onError) onError(err);
-              reject(err);
+              const error = typeof err === 'string' ? new Error(err) : err;
+              if (onError) onError(error);
+              reject(error);
               return;
             }
             const downloadedFile = new File([blob!], file.name, {

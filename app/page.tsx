@@ -46,6 +46,12 @@ export default function Home() {
   // Storage manager
   const [storageManager] = useState(() => new StorageManager());
   
+  // Transfer mode: 'p2p' or 'server'
+  const [transferMode, setTransferMode] = useState<'p2p' | 'server'>('server');
+  const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
   // Tab visibility warning
   const [tabHidden, setTabHidden] = useState(false);
 
@@ -230,13 +236,49 @@ export default function Home() {
   const handleSend = async () => {
     if (files.length === 0) return;
 
-    if (usePassword && !password) {
-      setPasswordMode('set');
-      setShowPasswordInput(true);
-      return;
+    if (transferMode === 'server') {
+      // Server-based upload (like WeTransfer)
+      await handleServerUpload();
+    } else {
+      // P2P upload
+      if (usePassword && !password) {
+        setPasswordMode('set');
+        setShowPasswordInput(true);
+        return;
+      }
+      proceedWithSend(password || undefined);
     }
+  };
 
-    proceedWithSend(password || undefined);
+  const handleServerUpload = async () => {
+    try {
+      setUploading(true);
+      setTransferState('preparing');
+      setError(null);
+
+      const file = files[0]; // For now, upload first file only
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const data = await response.json();
+      setUploadedFileUrl(data.url);
+      setShareLink(data.url);
+      setTransferState('completed');
+      setUploading(false);
+    } catch (err) {
+      setError((err as Error).message);
+      setTransferState('error');
+      setUploading(false);
+    }
   };
 
   const proceedWithSend = async (pwd?: string) => {
@@ -422,31 +464,48 @@ export default function Home() {
                   </p>
                 </div>
 
-                {/* Important Notice */}
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-xl p-5">
-                  <div className="flex items-start space-x-3">
-                    <div className="text-3xl">💡</div>
-                    <div>
-                      <h3 className="text-lg font-bold text-blue-900 dark:text-blue-300 mb-2">
-                        How to Test P2P File Sharing
-                      </h3>
-                      <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
-                        <p className="font-semibold">You need TWO devices/browsers open at the SAME TIME:</p>
-                        <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3 space-y-2">
-                          <div>
-                            <span className="font-bold">🖥️ Device 1 (Sender):</span>
-                            <p className="text-xs ml-4">Open this page → Upload file → Keep tab OPEN</p>
-                          </div>
-                          <div>
-                            <span className="font-bold">📱 Device 2 (Receiver):</span>
-                            <p className="text-xs ml-4">Scan QR code or open link → Connects automatically</p>
-                          </div>
-                        </div>
-                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">
-                          ⚠️ Both must be online simultaneously for P2P connection to work!
-                        </p>
-                      </div>
-                    </div>
+                {/* Transfer Mode Selector */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-2 border-purple-300 dark:border-purple-700 rounded-xl p-5">
+                  <h3 className="text-lg font-bold text-purple-900 dark:text-purple-300 mb-3 text-center">
+                    Choose Transfer Method
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      onClick={() => setTransferMode('server')}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        transferMode === 'server'
+                          ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-green-300'
+                      }`}
+                    >
+                      <div className="text-3xl mb-2">☁️</div>
+                      <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        Server Upload (Recommended)
+                      </h4>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        ✅ Upload once, share anytime<br/>
+                        ✅ Receiver can download even if you're offline<br/>
+                        ✅ Works like WeTransfer
+                      </p>
+                    </button>
+                    <button
+                      onClick={() => setTransferMode('p2p')}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        transferMode === 'p2p'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-blue-300'
+                      }`}
+                    >
+                      <div className="text-3xl mb-2">🔗</div>
+                      <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        P2P Direct Transfer
+                      </h4>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        🔒 Direct browser-to-browser<br/>
+                        ⚠️ Both must be online simultaneously<br/>
+                        💾 No server storage
+                      </p>
+                    </button>
                   </div>
                 </div>
 
@@ -654,15 +713,45 @@ export default function Home() {
                 </motion.div>
                 <div>
                   <h2 className="text-3xl font-bold mb-2">
-                    {isSending ? 'Transfer Complete!' : 'Files Received!'}
+                    {transferMode === 'server' ? 'Upload Complete!' : isSending ? 'Transfer Complete!' : 'Files Received!'}
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400">
-                    {isSending 
-                      ? 'Your files have been successfully sent.' 
-                      : `${receivedFiles.length} file(s) ready to download.`
+                    {transferMode === 'server' 
+                      ? 'Your file has been uploaded! Share the link below.' 
+                      : isSending 
+                        ? 'Your files have been successfully sent.' 
+                        : `${receivedFiles.length} file(s) ready to download.`
                     }
                   </p>
                 </div>
+                
+                {transferMode === 'server' && uploadedFileUrl && (
+                  <div className="space-y-4">
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
+                      <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-2">
+                        ✅ File is now available for download!
+                      </p>
+                      <p className="text-xs text-green-800 dark:text-green-300 mb-3">
+                        Anyone with this link can download the file, even if you close your browser!
+                      </p>
+                      <div className="flex items-center space-x-2 p-3 bg-white dark:bg-gray-800 rounded-lg">
+                        <input
+                          type="text"
+                          value={uploadedFileUrl}
+                          readOnly
+                          className="flex-1 bg-transparent border-none outline-none text-xs font-mono text-gray-700 dark:text-gray-300"
+                        />
+                        <button
+                          onClick={() => navigator.clipboard.writeText(uploadedFileUrl)}
+                          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold"
+                        >
+                          Copy Link
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 {isReceiving && receivedFiles.length > 0 && (
                   <motion.button
                     initial={{ opacity: 0, y: 20 }}

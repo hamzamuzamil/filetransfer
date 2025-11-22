@@ -307,4 +307,4 @@ For issues, questions, or suggestions, please open an issue on GitHub.
 
 ---
 
-**Built with ❤️ using Next.js and WebRTC**
+**Build by Hamza**

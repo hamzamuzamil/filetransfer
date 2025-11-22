@@ -100,7 +100,7 @@ export class EncryptionManager {
     password: string
   ): Promise<{ encrypted: string; salt: string; iv: string }> {
     const data = this.encoder.encode(text);
-    const result = await this.encrypt(data, password);
+    const result = await this.encrypt(data.buffer as ArrayBuffer, password);
 
     return {
       encrypted: this.arrayBufferToBase64(result.encrypted),

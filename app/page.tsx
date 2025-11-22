@@ -422,6 +422,34 @@ export default function Home() {
                   </p>
                 </div>
 
+                {/* Important Notice */}
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-xl p-5">
+                  <div className="flex items-start space-x-3">
+                    <div className="text-3xl">💡</div>
+                    <div>
+                      <h3 className="text-lg font-bold text-blue-900 dark:text-blue-300 mb-2">
+                        How to Test P2P File Sharing
+                      </h3>
+                      <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
+                        <p className="font-semibold">You need TWO devices/browsers open at the SAME TIME:</p>
+                        <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3 space-y-2">
+                          <div>
+                            <span className="font-bold">🖥️ Device 1 (Sender):</span>
+                            <p className="text-xs ml-4">Open this page → Upload file → Keep tab OPEN</p>
+                          </div>
+                          <div>
+                            <span className="font-bold">📱 Device 2 (Receiver):</span>
+                            <p className="text-xs ml-4">Scan QR code or open link → Connects automatically</p>
+                          </div>
+                        </div>
+                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">
+                          ⚠️ Both must be online simultaneously for P2P connection to work!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <FileDropZone
                   onFilesSelected={handleFilesSelected}
                   disabled={false}
@@ -545,12 +573,22 @@ export default function Home() {
                   <div className="text-center space-y-4">
                     <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto" />
                     <p className="text-lg font-medium">Connecting to sender...</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Make sure the sender has their browser open with the share link page visible.
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      Connection will timeout after 30 seconds if sender is not available.
-                    </p>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 max-w-md mx-auto">
+                      <p className="text-sm text-blue-900 dark:text-blue-300 font-semibold mb-2">
+                        💡 How P2P File Sharing Works:
+                      </p>
+                      <ol className="text-xs text-blue-800 dark:text-blue-300 text-left space-y-1 list-decimal list-inside">
+                        <li>Sender must have their browser tab OPEN and WAITING</li>
+                        <li>Receiver (you) opens the link</li>
+                        <li>Both connect directly (peer-to-peer)</li>
+                        <li>Files transfer directly between browsers</li>
+                      </ol>
+                    </div>
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 max-w-md mx-auto">
+                      <p className="text-xs text-yellow-800 dark:text-yellow-300">
+                        ⚠️ If you're seeing this for more than 10 seconds, the sender might not be online or their tab is closed.
+                      </p>
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -659,9 +697,29 @@ export default function Home() {
                   <h2 className="text-2xl font-bold mb-2 text-red-600 dark:text-red-400">
                     Transfer Failed
                   </h2>
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
                     {error || 'An error occurred during the transfer.'}
                   </p>
+                  
+                  {/* Helpful explanation */}
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md mx-auto text-left">
+                    <p className="text-sm font-bold text-red-900 dark:text-red-300 mb-2">
+                      🤔 Why did this happen?
+                    </p>
+                    <ul className="text-xs text-red-800 dark:text-red-300 space-y-1">
+                      <li>• The sender closed their browser tab before you connected</li>
+                      <li>• The sender is not online right now</li>
+                      <li>• The link expired or is invalid</li>
+                      <li>• Network/firewall blocked the connection</li>
+                    </ul>
+                    <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-700">
+                      <p className="text-xs font-bold text-red-900 dark:text-red-200 mb-1">✅ Solution:</p>
+                      <p className="text-xs text-red-800 dark:text-red-300">
+                        Ask the sender to open their browser, upload the file again, and generate a NEW share link. 
+                        Make sure they keep their tab open while you connect!
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <button
                   onClick={handleReset}

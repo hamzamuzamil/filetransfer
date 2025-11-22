@@ -123,17 +123,27 @@ export default function ShareLink({ link }: ShareLinkProps) {
 
       {/* Instructions */}
       <div className="space-y-3">
+        <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-700 rounded-lg p-4">
+          <p className="text-sm font-bold text-red-900 dark:text-red-300 mb-2 text-center">
+            🚨 CRITICAL: Do NOT Close This Tab!
+          </p>
+          <p className="text-xs text-red-800 dark:text-red-300 text-center">
+            You MUST keep this browser tab open and visible. If you close or minimize it, the transfer will fail!
+          </p>
+        </div>
+        
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-          <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-2">✨ Easy Sharing Options:</p>
+          <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-2">📤 How to Share:</p>
           <ol className="text-xs text-green-800 dark:text-green-300 space-y-1">
-            <li>📱 <strong>Best:</strong> Scan QR code with your phone and send from there</li>
-            <li>📤 <strong>Or:</strong> Click "Share Link" button to use WhatsApp/Email</li>
-            <li>📋 <strong>Or:</strong> Click "Copy Link" and paste in another window</li>
+            <li><strong>Option 1:</strong> Scan QR code with phone → Send from phone</li>
+            <li><strong>Option 2:</strong> Click "Share Link" → Choose WhatsApp/Email</li>
+            <li><strong>Option 3:</strong> Click "Copy Link" → Paste in separate window</li>
           </ol>
         </div>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-          <p className="text-xs text-yellow-800 dark:text-yellow-300 text-center font-medium">
-            ⚠️ <strong>Important:</strong> Keep this browser tab open and visible until the recipient connects!
+        
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <p className="text-xs text-blue-800 dark:text-blue-300 text-center">
+            💡 <strong>Tip:</strong> Use your phone to scan the QR code. This way your computer tab stays open!
           </p>
         </div>
       </div>

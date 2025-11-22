@@ -124,13 +124,8 @@ export class WebRTCManager {
         return;
       }
 
-      // Check connection state - PeerJS uses 'open' property
-      let isOpen = false;
-      if (typeof this.dataChannel.open === 'boolean') {
-        isOpen = this.dataChannel.open === true;
-      } else if (this.dataChannel.readyState) {
-        isOpen = this.dataChannel.readyState === 'open';
-      }
+      // Check connection state using readyState
+      const isOpen = this.dataChannel.readyState === 'open';
       
       if (!isOpen) {
         reject(new Error('Data channel not ready. Please wait for recipient to connect.'));

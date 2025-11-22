@@ -175,17 +175,9 @@ export class WebRTCManager {
 
   isConnected(): boolean {
     if (!this.dataChannel) return false;
-    // PeerJS DataConnection uses 'open' property (boolean)
-    // Native RTCDataChannel uses readyState === 'open'
+    // RTCDataChannel uses readyState === 'open'
     try {
-      if (typeof this.dataChannel.open === 'boolean') {
-        return this.dataChannel.open === true;
-      }
-      if (this.dataChannel.readyState) {
-        return this.dataChannel.readyState === 'open';
-      }
-      // Fallback: check if we can access the connection
-      return !!this.dataChannel;
+      return this.dataChannel.readyState === 'open';
     } catch (e) {
       return false;
     }

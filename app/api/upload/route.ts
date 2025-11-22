@@ -1,4 +1,3 @@
-import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'edge';
@@ -12,23 +11,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Upload to Vercel Blob
-    const blob = await put(file.name, file, {
-      access: 'public',
-      addRandomSuffix: true,
+    // Upload to file.io (free temporary file hosting)
+    const uploadFormData = new FormData();
+    uploadFormData.append('file', file);
+
+    const response = await fetch('https://file.io', {
+      method: 'POST',
+      body: uploadFormData,
     });
 
+    if (!response.ok) {
+      throw new Error('Upload failed');
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.message || 'Upload failed');
+    }
+
     return NextResponse.json({
-      url: blob.url,
-      downloadUrl: blob.downloadUrl,
-      pathname: blob.pathname,
+      url: data.link,
+      downloadUrl: data.link,
+      name: file.name,
+      size: file.size,
     });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
-      { error: 'Failed to upload file' },
+      { error: error instanceof Error ? error.message : 'Failed to upload file' },
       { status: 500 }
     );
   }
 }
-

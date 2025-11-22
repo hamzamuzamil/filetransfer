@@ -14,7 +14,6 @@
     "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
-    "@vercel/blob": "^2.0.0",
     "framer-motion": "^10.16.16",
     "lucide-react": "^0.294.0",
     "next": "^14.2.5",
@@ -22,8 +21,7 @@
     "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-dropzone": "^14.2.3",
-    "webtorrent": "^2.8.4"
+    "react-dropzone": "^14.2.3"
   },
   "devDependencies": {
     "@types/node": "^20.10.6",

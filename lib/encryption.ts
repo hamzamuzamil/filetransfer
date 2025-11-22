@@ -104,8 +104,8 @@ export class EncryptionManager {
 
     return {
       encrypted: this.arrayBufferToBase64(result.encrypted),
-      salt: this.arrayBufferToBase64(result.salt),
-      iv: this.arrayBufferToBase64(result.iv),
+      salt: this.arrayBufferToBase64(result.salt.buffer as ArrayBuffer),
+      iv: this.arrayBufferToBase64(result.iv.buffer as ArrayBuffer),
     };
   }
 

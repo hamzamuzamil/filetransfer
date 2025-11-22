@@ -49,28 +49,6 @@ export default function Home() {
   // Tab visibility warning
   const [tabHidden, setTabHidden] = useState(false);
 
-  // Monitor tab visibility to warn sender
-  useEffect(() => {
-    const originalTitle = document.title;
-    
-    const handleVisibilityChange = () => {
-      if (document.hidden && transferState === 'connecting' && isSending) {
-        setTabHidden(true);
-        document.title = '⚠️ Return to tab - P2P File Share';
-        console.warn('Tab hidden while waiting for connection - this may cause issues');
-      } else {
-        setTabHidden(false);
-        document.title = originalTitle;
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.title = originalTitle;
-    };
-  }, [transferState, isSending]);
-
   // Check if we're receiving (has connection ID in URL)
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -379,6 +357,28 @@ export default function Home() {
 
   const isReceiving = connectionId && !shareLink;
   const isSending = shareLink.length > 0;
+
+  // Monitor tab visibility to warn sender
+  useEffect(() => {
+    const originalTitle = document.title;
+    
+    const handleVisibilityChange = () => {
+      if (document.hidden && transferState === 'connecting' && isSending) {
+        setTabHidden(true);
+        document.title = '⚠️ Return to tab - P2P File Share';
+        console.warn('Tab hidden while waiting for connection - this may cause issues');
+      } else {
+        setTabHidden(false);
+        document.title = originalTitle;
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.title = originalTitle;
+    };
+  }, [transferState, isSending]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">

@@ -146,6 +146,84 @@ export class WebTorrentClient {
       const originalName = url.searchParams.get('x.originalName') || 'download';
       const originalType = url.searchParams.get('x.originalType') || 'application/octet-stream';
 
+      // Check if torrent already exists in client
+      const existingTorrent = this.client.torrents.find(t => t.magnetURI === magnetURI);
+      if (existingTorrent) {
+        // Use existing torrent
+        this.currentTorrent = existingTorrent;
+        const file = existingTorrent.files[0];
+        
+        if (file && existingTorrent.progress === 1) {
+          // Already downloaded, get it
+          file.getBlob((err?: string | Error, blob?: Blob) => {
+            if (err) {
+              onError(err instanceof Error ? err : new Error(String(err)));
+              return;
+            }
+            if (blob) {
+              if (isEncrypted) {
+                blob.arrayBuffer().then((arrayBuffer: ArrayBuffer) => {
+                  const uint8Array = new Uint8Array(arrayBuffer);
+                  const decrypted = this.decryptData(uint8Array, password);
+                  const decryptedBlob = new Blob([decrypted.buffer as ArrayBuffer], { type: originalType });
+                  onComplete(decryptedBlob, originalName);
+                }).catch((error: unknown) => {
+                  onError(error instanceof Error ? error : new Error(String(error)));
+                });
+              } else {
+                onComplete(blob, originalName);
+              }
+            }
+          });
+        } else {
+          // Still downloading, track progress
+          const interval = setInterval(() => {
+            if (!existingTorrent) {
+              clearInterval(interval);
+              return;
+            }
+
+            onProgress({
+              progress: existingTorrent.progress,
+              downloaded: existingTorrent.downloaded,
+              total: existingTorrent.length,
+              downloadSpeed: existingTorrent.downloadSpeed,
+              uploadSpeed: existingTorrent.uploadSpeed,
+              peers: existingTorrent.numPeers,
+              timeRemaining: existingTorrent.timeRemaining,
+            });
+
+            if (existingTorrent.progress === 1) {
+              clearInterval(interval);
+              const file = existingTorrent.files[0];
+              if (file) {
+                file.getBlob((err?: string | Error, blob?: Blob) => {
+                  if (err) {
+                    onError(err instanceof Error ? err : new Error(String(err)));
+                    return;
+                  }
+                  if (blob) {
+                    if (isEncrypted) {
+                      blob.arrayBuffer().then((arrayBuffer: ArrayBuffer) => {
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        const decrypted = this.decryptData(uint8Array, password);
+                        const decryptedBlob = new Blob([decrypted.buffer as ArrayBuffer], { type: originalType });
+                        onComplete(decryptedBlob, originalName);
+                      }).catch((error: unknown) => {
+                        onError(error instanceof Error ? error : new Error(String(error)));
+                      });
+                    } else {
+                      onComplete(blob, originalName);
+                    }
+                  }
+                });
+              }
+            }
+          }, 1000);
+        }
+        return;
+      }
+
       this.currentTorrent = this.client.add(magnetURI, (torrent) => {
         const file = torrent.files[0];
 

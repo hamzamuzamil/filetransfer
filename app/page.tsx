@@ -34,6 +34,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [downloadPassword, setDownloadPassword] = useState('');
   const [downloadedFile, setDownloadedFile] = useState<{ blob: Blob; filename: string } | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const clientRef = useRef<WebTorrentClient | null>(null);
 
@@ -93,9 +94,10 @@ export default function Home() {
   };
 
   const handleDownload = () => {
-    if (!clientRef.current || !magnetURI) return;
+    if (!clientRef.current || !magnetURI || isDownloading) return;
 
     setError('');
+    setIsDownloading(true);
 
     clientRef.current.downloadFile(
       magnetURI,
@@ -105,9 +107,36 @@ export default function Home() {
       },
       (blob, filename) => {
         setDownloadedFile({ blob, filename });
+        setIsDownloading(false);
       },
       (error) => {
-        setError(error.message);
+        // Check if it's a duplicate torrent error and handle gracefully
+        if (error.message.includes('duplicate torrent')) {
+          setError('This file is already being downloaded. Please wait...');
+          // Try to get existing torrent progress
+          setTimeout(() => {
+            if (clientRef.current) {
+              clientRef.current.downloadFile(
+                magnetURI,
+                downloadPassword,
+                (progress) => {
+                  setProgress(progress);
+                },
+                (blob, filename) => {
+                  setDownloadedFile({ blob, filename });
+                  setIsDownloading(false);
+                },
+                (err) => {
+                  setError(err.message);
+                  setIsDownloading(false);
+                }
+              );
+            }
+          }, 1000);
+        } else {
+          setError(error.message);
+          setIsDownloading(false);
+        }
       }
     );
   };
@@ -498,10 +527,10 @@ export default function Home() {
                 
                   <button
                     onClick={handleDownload}
-                    disabled={progress.progress > 0 && progress.progress < 1}
+                    disabled={(progress.progress > 0 && progress.progress < 1) || isDownloading}
                     className="w-full py-4 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-lg font-semibold text-lg transition-colors"
                   >
-                    {progress.progress > 0 && progress.progress < 1 ? 'Downloading...' : 'Start Download'}
+                    {isDownloading || (progress.progress > 0 && progress.progress < 1) ? 'Downloading...' : 'Start Download'}
                   </button>
                 </div>
               ) : (

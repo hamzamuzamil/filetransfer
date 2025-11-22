@@ -28,34 +28,52 @@ export default function ShareLink({ link }: ShareLinkProps) {
       animate={{ opacity: 1, y: 0 }}
       className="w-full"
     >
-      <div className="flex items-center space-x-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-        <Share2 className="w-5 h-5 text-primary-500 flex-shrink-0" />
+      <div className="flex items-center space-x-2 p-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border-2 border-primary-300 dark:border-primary-700">
+        <Share2 className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0" />
         <input
           type="text"
           value={link}
           readOnly
-          className="flex-1 bg-transparent border-none outline-none text-sm font-mono text-gray-700 dark:text-gray-300 truncate"
+          className="flex-1 bg-transparent border-none outline-none text-sm font-mono text-gray-800 dark:text-gray-200 truncate font-medium"
         />
         <button
           onClick={handleCopy}
-          className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+          className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors flex-shrink-0 font-semibold text-sm shadow-md"
           title="Copy link"
         >
           {copied ? (
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
+              className="flex items-center space-x-1"
             >
-              <Check className="w-5 h-5 text-green-500" />
+              <Check className="w-4 h-4" />
+              <span>Copied!</span>
             </motion.div>
           ) : (
-            <Copy className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+            <div className="flex items-center space-x-1">
+              <Copy className="w-4 h-4" />
+              <span>Copy</span>
+            </div>
           )}
         </button>
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-        Share this link with the recipient to start the transfer
-      </p>
+      <div className="mt-3 space-y-3">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">📝 How to share:</p>
+          <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-1 list-decimal list-inside">
+            <li>Click the <strong>Copy</strong> button above</li>
+            <li>Send the link via WhatsApp, Email, or any messenger</li>
+            <li><strong>Return to this tab immediately</strong></li>
+            <li>Keep this tab open and visible until transfer completes</li>
+          </ol>
+        </div>
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+          <p className="text-xs text-yellow-800 dark:text-yellow-300 text-center">
+            ⚠️ <strong>Critical:</strong> Do not minimize or close this tab! Switching tabs may cause the connection to fail.
+          </p>
+        </div>
+      </div>
     </motion.div>
   );
 }

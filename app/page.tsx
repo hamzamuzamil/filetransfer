@@ -45,6 +45,31 @@ export default function Home() {
   
   // Storage manager
   const [storageManager] = useState(() => new StorageManager());
+  
+  // Tab visibility warning
+  const [tabHidden, setTabHidden] = useState(false);
+
+  // Monitor tab visibility to warn sender
+  useEffect(() => {
+    const originalTitle = document.title;
+    
+    const handleVisibilityChange = () => {
+      if (document.hidden && transferState === 'connecting' && isSending) {
+        setTabHidden(true);
+        document.title = '⚠️ Return to tab - P2P File Share';
+        console.warn('Tab hidden while waiting for connection - this may cause issues');
+      } else {
+        setTabHidden(false);
+        document.title = originalTitle;
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.title = originalTitle;
+    };
+  }, [transferState, isSending]);
 
   // Check if we're receiving (has connection ID in URL)
   useEffect(() => {
@@ -500,6 +525,17 @@ export default function Home() {
                           <Shield className="w-4 h-4" />
                           <span className="text-sm font-medium">Password Protected</span>
                         </div>
+                      )}
+                      {tabHidden && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
+                        >
+                          <p className="text-sm text-red-700 dark:text-red-300 font-medium">
+                            ⚠️ Tab is hidden! Return to this tab to maintain connection.
+                          </p>
+                        </motion.div>
                       )}
                     </div>
                     <ShareLink link={shareLink} />

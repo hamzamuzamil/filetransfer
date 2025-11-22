@@ -1,74 +1,117 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Download, Copy, Check, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Copy, Check, X, HelpCircle } from 'lucide-react';
+import { WebTorrentClient, TorrentProgress } from '@/lib/webtorrent-client';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function Home() {
+  const [mode, setMode] = useState<'select' | 'seeding' | 'downloading'>('select');
   const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [password, setPassword] = useState('');
+  const [showPasswordHelp, setShowPasswordHelp] = useState(false);
+  const [magnetURI, setMagnetURI] = useState('');
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const [progress, setProgress] = useState<TorrentProgress>({
+    progress: 0,
+    downloaded: 0,
+    total: 0,
+    downloadSpeed: 0,
+    uploadSpeed: 0,
+    peers: 0,
+    timeRemaining: 0,
+  });
   const [error, setError] = useState('');
+  const [downloadPassword, setDownloadPassword] = useState('');
+  const [downloadedFile, setDownloadedFile] = useState<{ blob: Blob; filename: string } | null>(null);
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const clientRef = useRef<WebTorrentClient | null>(null);
+
+  useEffect(() => {
+    clientRef.current = new WebTorrentClient();
+
+    // Check if this is a download link
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const magnet = params.get('magnet');
+      if (magnet) {
+        setMode('downloading');
+        setMagnetURI(decodeURIComponent(magnet));
+      }
+    }
+
+    return () => {
+      if (clientRef.current) {
+        clientRef.current.destroy();
+      }
+    };
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      handleUpload(selectedFile);
+      setError('');
     }
-  }, []);
+  };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      setFile(droppedFile);
-      handleUpload(droppedFile);
-    }
-  }, []);
+  const handleStart = () => {
+    if (!file || !clientRef.current) return;
 
-  const handleUpload = async (fileToUpload: File) => {
-    setStatus('uploading');
     setError('');
-    setUploadProgress(0);
+    setMode('seeding');
 
-    try {
-      const formData = new FormData();
-      formData.append('file', fileToUpload);
+    clientRef.current.seedFile(
+      file,
+      password,
+      (progress) => {
+        setProgress(progress);
+      },
+      (magnet) => {
+        setMagnetURI(magnet);
+        const url = `${window.location.origin}?magnet=${encodeURIComponent(magnet)}`;
+        setShareUrl(url);
+      },
+      (error) => {
+        setError(error.message);
+        setMode('select');
+      }
+    );
+  };
 
-      const xhr = new XMLHttpRequest();
+  const handleDownload = () => {
+    if (!clientRef.current || !magnetURI) return;
 
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const percentComplete = (e.loaded / e.total) * 100;
-          setUploadProgress(percentComplete);
-        }
-      });
+    setError('');
 
-      xhr.addEventListener('load', () => {
-        if (xhr.status === 200) {
-          const data = JSON.parse(xhr.responseText);
-          setShareUrl(data.url);
-          setStatus('success');
-        } else {
-          setError('Upload failed. Please try again.');
-          setStatus('error');
-        }
-      });
+    clientRef.current.downloadFile(
+      magnetURI,
+      downloadPassword,
+      (progress) => {
+        setProgress(progress);
+      },
+      (blob, filename) => {
+        setDownloadedFile({ blob, filename });
+      },
+      (error) => {
+        setError(error.message);
+      }
+    );
+  };
 
-      xhr.addEventListener('error', () => {
-        setError('Upload failed. Please check your connection.');
-        setStatus('error');
-      });
+  const handleSaveFile = () => {
+    if (!downloadedFile) return;
 
-      xhr.open('POST', '/api/upload');
-      xhr.send(formData);
-    } catch (err) {
-      setError('Upload failed: ' + (err as Error).message);
-      setStatus('error');
-    }
+    const url = URL.createObjectURL(downloadedFile.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadedFile.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleCopy = async () => {
@@ -77,187 +120,395 @@ export default function Home() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleReset = () => {
+  const handleStopUpload = () => {
+    if (clientRef.current) {
+      clientRef.current.stopSeeding();
+    }
+    setMode('select');
     setFile(null);
-    setStatus('idle');
-    setUploadProgress(0);
+    setPassword('');
+    setMagnetURI('');
     setShareUrl('');
-    setError('');
+    setProgress({
+      progress: 0,
+      downloaded: 0,
+      total: 0,
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      peers: 0,
+      timeRemaining: 0,
+    });
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const formatSpeed = (bytesPerSecond: number) => {
+    return `${formatBytes(bytesPerSecond)}/s`;
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-yellow-50 to-red-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
       {/* Header */}
-      <header className="container mx-auto px-4 py-6">
+      <header className="container mx-auto px-4 py-8">
         <div className="text-center">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-            🍕 File Share
+          <h1 
+            className="text-6xl font-bold mb-2 cursor-pointer"
+            onClick={() => window.location.href = '/'}
+            style={{ 
+              fontFamily: 'cursive',
+              color: '#ff6b6b',
+              textShadow: '3px 3px 0px rgba(255,107,107,0.2)'
+            }}
+          >
+            🍕 FilePizza
           </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Simple file sharing in your browser
-          </p>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
+      <main className="container mx-auto px-4 py-4 max-w-3xl">
         <AnimatePresence mode="wait">
-          {status === 'idle' && (
-            <motion.div
-              key="idle"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+          {/* File Selection Mode */}
+          {mode === 'select' && (
+        <motion.div
+              key="select"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="text-center"
-            >
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                className="border-4 border-dashed border-blue-300 dark:border-blue-700 rounded-3xl p-20 hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all cursor-pointer bg-white/80 dark:bg-gray-800/50 backdrop-blur"
-                onClick={() => document.getElementById('file-input')?.click()}
+              className="bg-white dark:bg-gray-800 rounded-3xl p-12 shadow-2xl"
               >
-                <Upload className="w-24 h-24 text-blue-500 mx-auto mb-6" />
-                <h2 className="text-3xl font-bold mb-3">Drop a file to get started</h2>
-                <p className="text-gray-600 dark:text-gray-400 text-lg">
-                  or click to browse
-                </p>
-                <input
-                  id="file-input"
-                  type="file"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-            </motion.div>
-          )}
-
-          {status === 'uploading' && (
-            <motion.div
-              key="uploading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-6"
-            >
-              <div className="text-center mb-8">
-                <Loader2 className="w-20 h-20 text-blue-500 animate-spin mx-auto mb-6" />
-                <h2 className="text-3xl font-bold mb-3">Uploading...</h2>
-                <p className="text-gray-600 dark:text-gray-400">
-                  {file?.name} ({(file!.size / 1024 / 1024).toFixed(2)} MB)
-                </p>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl">
-                <div className="mb-4">
-                  <div className="flex justify-between text-sm mb-3">
-                    <span className="font-medium">Progress</span>
-                    <span className="font-bold text-blue-600">{uploadProgress.toFixed(0)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
-                    <div
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-4 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
+                <div className="text-center mb-8">
+                <div className="w-48 h-48 mx-auto mb-8 relative">
+                  <svg viewBox="0 0 200 200" className="w-full h-full">
+                    {/* Pizza slice illustration */}
+                    <circle cx="100" cy="100" r="80" fill="#ff6b6b" />
+                    <path d="M 100 100 L 180 100 A 80 80 0 0 1 100 180 Z" fill="#ffa500" />
+                    <circle cx="130" cy="130" r="8" fill="#ff0000" />
+                    <circle cx="150" cy="110" r="6" fill="#ff0000" />
+                    <circle cx="120" cy="150" r="7" fill="#00ff00" />
+                  </svg>
                 </div>
-              </div>
-            </motion.div>
-          )}
 
-          {status === 'success' && (
-            <motion.div
-              key="success"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-6"
-            >
-              <div className="text-center mb-8">
-                <CheckCircle2 className="w-24 h-24 text-green-500 mx-auto mb-6" />
-                <h2 className="text-4xl font-bold mb-3">Upload Complete!</h2>
-                <p className="text-gray-600 dark:text-gray-400 text-lg">
-                  Your file is ready to share
-                </p>
+                <h2 className="text-3xl font-bold mb-4 text-gray-800 dark:text-white">
+                  You are about to start uploading {file ? '1 file' : 'files'}
+                  {file && <button 
+                    onClick={() => {
+                      document.getElementById('file-input')?.click();
+                    }}
+                    className="ml-3 text-blue-500 hover:text-blue-600 text-lg font-normal underline"
+                  >
+                    Add more files
+                  </button>}
+                </h2>
               </div>
 
-              {/* Share Link */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl space-y-6">
-                <div>
-                  <label className="block text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">
-                    Share this link:
-                  </label>
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="text"
-                      value={shareUrl}
-                      readOnly
-                      className="flex-1 bg-gray-50 dark:bg-gray-700 px-4 py-4 rounded-xl text-sm font-mono border-2 border-gray-200 dark:border-gray-600 focus:outline-none focus:border-blue-500"
-                    />
+              {file ? (
+                <div className="space-y-6">
+                  {/* Selected File */}
+                  <div className="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="text-white font-medium truncate">{file.name}</div>
+                      <div className="text-gray-400 text-sm">{file.type || 'unknown type'}</div>
+                    </div>
                     <button
-                      onClick={handleCopy}
-                      className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                      onClick={() => setFile(null)}
+                      className="ml-4 text-gray-400 hover:text-white"
                     >
-                      {copied ? (
-                        <span className="flex items-center">
-                          <Check className="w-5 h-5 mr-2" />
-                          Copied!
-                        </span>
-                      ) : (
-                        <span className="flex items-center">
-                          <Copy className="w-5 h-5 mr-2" />
-                          Copy
-                        </span>
-                      )}
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Password Field */}
+                        <div>
+                    <div className="flex items-center mb-2">
+                      <label className="text-gray-700 dark:text-gray-300 font-medium">
+                        Password (optional)
+                      </label>
+                      <button
+                        onClick={() => setShowPasswordHelp(!showPasswordHelp)}
+                        className="ml-2 text-gray-400 hover:text-gray-600"
+                      >
+                        <HelpCircle className="w-4 h-4" />
+                      </button>
+                        </div>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter a secret password for this slice of FilePizza..."
+                      className="w-full bg-gray-50 dark:bg-gray-700 px-4 py-4 rounded-lg border-2 border-blue-400 focus:border-blue-500 focus:outline-none text-gray-800 dark:text-white"
+                    />
+                    {showPasswordHelp && (
+                      <div className="mt-2 text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                        💡 Add a password to encrypt your file before sharing. The receiver will need this password to download it.
+                      </div>
+                    )}
+                  </div>
+
+                  {error && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
+                      {error}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => {
+                        setFile(null);
+                        setPassword('');
+                        setError('');
+                      }}
+                      className="flex-1 py-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg font-semibold text-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleStart}
+                      className="flex-1 py-4 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold text-lg transition-colors shadow-lg"
+                    >
+                      Start
                     </button>
                   </div>
                 </div>
-
-                <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border-2 border-green-200 dark:border-green-800">
-                  <p className="text-sm text-green-800 dark:text-green-300 text-center font-medium">
-                    ✅ You can close this page now! The file will remain available for download.
+              ) : (
+                <div
+                  onClick={() => document.getElementById('file-input')?.click()}
+                  className="border-4 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-16 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all"
+                >
+                  <p className="text-xl text-gray-600 dark:text-gray-400 mb-2">
+                    Click here to select a file
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500">
+                    or drag and drop
                   </p>
                 </div>
+              )}
+
+              <input
+                id="file-input"
+                type="file"
+                onChange={handleFileSelect}
+                className="hidden"
+                />
+              </motion.div>
+            )}
+
+          {/* Seeding Mode */}
+          {mode === 'seeding' && (
+              <motion.div
+              key="seeding"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-3xl p-12 shadow-2xl space-y-8"
+            >
+              <div className="text-center">
+                <h2 className="text-3xl font-bold mb-2 text-gray-800 dark:text-white">
+                  You are uploading 1 file.
+                </h2>
+                <p className="text-red-600 dark:text-red-400 font-medium text-lg">
+                  Leave this tab open. FilePizza does not store files.
+                </p>
               </div>
 
-              <button
-                onClick={handleReset}
-                className="w-full py-4 bg-gray-200 dark:bg-gray-700 rounded-xl font-semibold text-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Share Another File
-              </button>
-            </motion.div>
-          )}
+              {/* File Info */}
+              <div className="bg-gray-800 rounded-lg p-4">
+                <div className="text-white font-medium truncate">{file?.name}</div>
+                <div className="text-gray-400 text-sm">{file?.type || 'unknown type'}</div>
+              </div>
 
-          {status === 'error' && (
-            <motion.div
-              key="error"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center space-y-6"
+              {shareUrl && (
+                <div className="space-y-6">
+                  {/* QR Code */}
+                  <div className="flex justify-center">
+                    <div className="bg-white p-4 rounded-lg">
+                      <QRCodeSVG value={shareUrl} size={200} />
+                    </div>
+                  </div>
+
+                  {/* Share URL */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                      Long URL
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="text"
+                        value={shareUrl}
+                        readOnly
+                        className="flex-1 bg-gray-50 dark:bg-gray-700 px-4 py-3 rounded-lg text-sm font-mono border-2 border-gray-200 dark:border-gray-600 text-gray-800 dark:text-white"
+                      />
+                      <button
+                        onClick={handleCopy}
+                        className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors"
+                      >
+                        {copied ? (
+                          <span className="flex items-center">
+                            <Check className="w-4 h-4 mr-2" />
+                            Copied!
+                          </span>
+                        ) : (
+                          <span className="flex items-center">
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copy
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
+                    <div className="text-center mb-4">
+                      <div className="text-4xl font-bold text-gray-800 dark:text-white mb-2">
+                        {progress.peers} Downloading, {progress.peers} Total
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="text-gray-600 dark:text-gray-400">Upload Speed</div>
+                        <div className="font-semibold text-gray-800 dark:text-white">
+                          {formatSpeed(progress.uploadSpeed)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-600 dark:text-gray-400">Uploaded</div>
+                        <div className="font-semibold text-gray-800 dark:text-white">
+                          {formatBytes(progress.downloaded)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stop Button */}
+                  <button
+                    onClick={handleStopUpload}
+                    className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold text-lg transition-colors"
+                  >
+                    🛑 Stop Upload
+                  </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+          {/* Downloading Mode */}
+          {mode === 'downloading' && (
+              <motion.div
+              key="downloading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-3xl p-12 shadow-2xl space-y-8"
             >
-              <AlertCircle className="w-24 h-24 text-red-500 mx-auto" />
-              <h2 className="text-3xl font-bold mb-3 text-red-600 dark:text-red-400">
-                Upload Failed
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                {error}
-              </p>
-              <button
-                onClick={handleReset}
-                className="px-8 py-4 bg-gray-200 dark:bg-gray-700 rounded-xl font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Try Again
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <div className="text-center">
+                <h2 className="text-3xl font-bold mb-4 text-gray-800 dark:text-white">
+                  {downloadedFile ? 'Download Complete!' : 'Download File'}
+                  </h2>
+              </div>
+
+              {!downloadedFile ? (
+                <div className="space-y-6">
+                  {magnetURI.includes('x.encrypted=true') && (
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                        Password Required
+                      </label>
+                      <input
+                        type="password"
+                        value={downloadPassword}
+                        onChange={(e) => setDownloadPassword(e.target.value)}
+                        placeholder="Enter the password to decrypt this file..."
+                        className="w-full bg-gray-50 dark:bg-gray-700 px-4 py-4 rounded-lg border-2 border-blue-400 focus:border-blue-500 focus:outline-none text-gray-800 dark:text-white"
+                      />
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
+                      {error}
+                    </div>
+                  )}
+
+                  {progress.progress > 0 && (
+                    <div className="space-y-4">
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">Progress</span>
+                        <span className="font-bold text-blue-600">{(progress.progress * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-purple-500 h-4 rounded-full transition-all duration-300"
+                          style={{ width: `${progress.progress * 100}%` }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <div className="text-gray-600 dark:text-gray-400">Speed</div>
+                          <div className="font-semibold text-gray-800 dark:text-white">
+                            {formatSpeed(progress.downloadSpeed)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600 dark:text-gray-400">Downloaded</div>
+                          <div className="font-semibold text-gray-800 dark:text-white">
+                            {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600 dark:text-gray-400">Peers</div>
+                          <div className="font-semibold text-gray-800 dark:text-white">
+                            {progress.peers}
+                          </div>
+                        </div>
+                      </div>
+                </div>
+                  )}
+                
+                  <button
+                    onClick={handleDownload}
+                    disabled={progress.progress > 0 && progress.progress < 1}
+                    className="w-full py-4 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-lg font-semibold text-lg transition-colors"
+                  >
+                    {progress.progress > 0 && progress.progress < 1 ? 'Downloading...' : 'Start Download'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="text-center text-6xl mb-4">✅</div>
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 text-center">
+                    <div className="font-semibold text-lg text-gray-800 dark:text-white mb-2">
+                      {downloadedFile.filename}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {formatBytes(downloadedFile.blob.size)}
+                    </div>
+                </div>
+                  <button
+                    onClick={handleSaveFile}
+                    className="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold text-lg transition-colors"
+                  >
+                    💾 Save File
+                </button>
+                </div>
+              )}
+              </motion.div>
+            )}
+          </AnimatePresence>
       </main>
 
       {/* Footer */}
       <footer className="container mx-auto px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-        <p>🍕 Simple file sharing • Upload once, share anywhere • Files stored securely</p>
+        <p>🍕 Free peer-to-peer file transfers in your browser • No storage, just streaming</p>
       </footer>
     </div>
   );

@@ -70,11 +70,14 @@ export default function Home() {
         setProgress(progress);
       },
       (magnet) => {
+        console.log('Received magnet URI:', magnet);
         setMagnetURI(magnet);
         const url = `${window.location.origin}?magnet=${encodeURIComponent(magnet)}`;
+        console.log('Share URL:', url);
         setShareUrl(url);
       },
       (error) => {
+        console.error('Seeding error:', error);
         setError(error.message);
         setMode('select');
       }
@@ -324,14 +327,23 @@ export default function Home() {
                 <div className="text-gray-400 text-sm">{file?.type || 'unknown type'}</div>
               </div>
 
-              {shareUrl && (
-                <div className="space-y-6">
-                  {/* QR Code */}
-                  <div className="flex justify-center">
-                    <div className="bg-white p-4 rounded-lg">
-                      <QRCodeSVG value={shareUrl} size={200} />
+              {magnetURI && (
+                <>
+                  {!shareUrl && (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                      <p className="text-gray-600 dark:text-gray-400">Generating share link...</p>
                     </div>
-                  </div>
+                  )}
+                  
+                  {shareUrl && (
+                    <div className="space-y-6">
+                      {/* QR Code */}
+                      <div className="flex justify-center">
+                        <div className="bg-white p-4 rounded-lg">
+                          <QRCodeSVG value={shareUrl} size={200} />
+                        </div>
+                      </div>
 
                   {/* Share URL */}
                   <div>
@@ -388,15 +400,17 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Stop Button */}
-                  <button
-                    onClick={handleStopUpload}
-                    className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold text-lg transition-colors"
-                  >
-                    🛑 Stop Upload
-                  </button>
-                  </div>
-                )}
+                      {/* Stop Button */}
+                      <button
+                        onClick={handleStopUpload}
+                        className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold text-lg transition-colors"
+                      >
+                        🛑 Stop Upload
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
               </motion.div>
             )}
 

@@ -23,7 +23,16 @@ export class WebTorrentClient {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.client = new WebTorrent();
+      this.client = new WebTorrent({
+        tracker: {
+          rtcConfig: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+          }
+        }
+      });
     }
   }
 
@@ -73,8 +82,14 @@ export class WebTorrentClient {
         { type: file.type }
       );
 
-      // Seed the file
-      this.currentTorrent = this.client.seed(encryptedFile, (torrent) => {
+      // Seed the file with public trackers
+      this.currentTorrent = this.client.seed(encryptedFile, {
+        announceList: [
+          ['wss://tracker.openwebtorrent.com'],
+          ['wss://tracker.webtorrent.dev'],
+          ['wss://tracker.btorrent.xyz']
+        ]
+      }, (torrent) => {
         const magnetURI = torrent.magnetURI;
         
         // Add metadata for decryption
@@ -82,6 +97,7 @@ export class WebTorrentClient {
           ? `${magnetURI}&x.originalName=${encodeURIComponent(file.name)}&x.originalType=${encodeURIComponent(file.type)}&x.encrypted=true`
           : magnetURI;
 
+        console.log('Torrent ready:', fullMagnetURI);
         onReady(fullMagnetURI);
 
         // Progress updates

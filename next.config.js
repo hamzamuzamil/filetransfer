@@ -5,6 +5,29 @@ const nextConfig = {
   // Production optimizations
   swcMinify: true,
   
+  // Webpack configuration for WebTorrent
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        crypto: false,
+        process: require.resolve('process/browser'),
+        buffer: require.resolve('buffer/'),
+      };
+      
+      config.plugins.push(
+        new (require('webpack')).ProvidePlugin({
+          process: 'process/browser',
+          Buffer: ['buffer', 'Buffer'],
+        })
+      );
+    }
+    return config;
+  },
+  
   // Compiler options for better performance
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {

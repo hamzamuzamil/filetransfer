@@ -1,5 +1,13 @@
 'use client';
 
+// Polyfills for WebTorrent
+import { Buffer } from 'buffer';
+if (typeof window !== 'undefined') {
+  window.Buffer = Buffer;
+  window.process = window.process || ({ env: {} } as any);
+  (window as any).global = window;
+}
+
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, X, HelpCircle } from 'lucide-react';

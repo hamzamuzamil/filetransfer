@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@types/qrcode.react": "^1.0.5",
+    "buffer": "^6.0.3",
     "framer-motion": "^10.16.16",
     "lucide-react": "^0.294.0",
     "next": "^14.2.5",
     "peerjs": "^1.5.2",
+    "process": "^0.11.10",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",

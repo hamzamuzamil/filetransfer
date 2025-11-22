@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'edge';
-
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -11,11 +9,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Upload to file.io (free temporary file hosting)
+    // Upload to catbox.moe (reliable free file hosting, no registration needed)
     const uploadFormData = new FormData();
-    uploadFormData.append('file', file);
+    uploadFormData.append('reqtype', 'fileupload');
+    uploadFormData.append('fileToUpload', file);
 
-    const response = await fetch('https://file.io', {
+    const response = await fetch('https://catbox.moe/user/api.php', {
       method: 'POST',
       body: uploadFormData,
     });
@@ -24,15 +23,15 @@ export async function POST(request: Request) {
       throw new Error('Upload failed');
     }
 
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.message || 'Upload failed');
+    const url = await response.text();
+    
+    if (!url || url.includes('error') || !url.startsWith('http')) {
+      throw new Error('Invalid response from server');
     }
 
     return NextResponse.json({
-      url: data.link,
-      downloadUrl: data.link,
+      url: url.trim(),
+      downloadUrl: url.trim(),
       name: file.name,
       size: file.size,
     });

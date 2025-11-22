@@ -97,7 +97,7 @@ export class WebRTCManager {
         });
         return;
       } else if (data instanceof Uint8Array) {
-        buffer = data.buffer;
+        buffer = data.buffer as ArrayBuffer;
       } else {
         // Try to convert
         buffer = data;

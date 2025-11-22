@@ -1,866 +1,264 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Download, Loader2, CheckCircle2, XCircle, RefreshCw, Shield, Pause, Play } from 'lucide-react';
-import FileDropZone from '@/components/FileDropZone';
-import ProgressBar from '@/components/ProgressBar';
-import ShareLink from '@/components/ShareLink';
-import ThemeToggle from '@/components/ThemeToggle';
-import PasswordInput from '@/components/PasswordInput';
-import ResumeTransferDialog from '@/components/ResumeTransferDialog';
-import { WebRTCManager } from '@/lib/webrtc';
-import { FileTransferManagerEnhanced } from '@/lib/fileTransferEnhanced';
-import { EncryptionManager } from '@/lib/encryption';
-import { StorageManager, ProgressPersistence, TransferStateData } from '@/lib/storage';
-import { TransferState, TransferProgress } from '@/types';
-import { generateShareLink } from '@/lib/utils';
+import { Upload, Download, Copy, Check, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function Home() {
-  const [files, setFiles] = useState<File[]>([]);
-  const [transferState, setTransferState] = useState<TransferState>('idle');
-  const [progress, setProgress] = useState<TransferProgress | null>(null);
-  const [connectionId, setConnectionId] = useState<string | null>(null);
-  const [shareLink, setShareLink] = useState<string>('');
-  const [receivedFiles, setReceivedFiles] = useState<File[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [webrtcManager, setWebrtcManager] = useState<WebRTCManager | null>(null);
-  const [transferManager, setTransferManager] = useState<FileTransferManagerEnhanced | null>(null);
-  
-  // Password protection
-  const [usePassword, setUsePassword] = useState(false);
-  const [password, setPassword] = useState<string | null>(null);
-  const [showPasswordInput, setShowPasswordInput] = useState(false);
-  const [passwordMode, setPasswordMode] = useState<'set' | 'verify'>('set');
-  const [passwordError, setPasswordError] = useState<string>('');
-  const [passwordVerifier, setPasswordVerifier] = useState<any>(null);
-  
-  // Resume functionality
-  const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
-  const [resumeData, setResumeData] = useState<TransferStateData | null>(null);
-  
-  // Pause/Resume
-  const [isPaused, setIsPaused] = useState(false);
-  
-  // Storage manager
-  const [storageManager] = useState(() => new StorageManager());
-  
-  // Transfer mode: 'p2p' or 'server'
-  const [transferMode, setTransferMode] = useState<'p2p' | 'server'>('server');
-  const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
-  
-  // Tab visibility warning
-  const [tabHidden, setTabHidden] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
 
-  // Check if we're receiving (has connection ID in URL)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const id = params.get('id');
-      if (id) {
-        setConnectionId(id);
-        checkForResumeData(id);
-      }
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      handleUpload(selectedFile);
     }
-
-    // Cleanup expired transfers on mount
-    storageManager.init().then(() => {
-      storageManager.cleanupExpiredTransfers();
-    });
-
-    // Monitor memory usage
-    const memoryInterval = setInterval(checkMemoryUsage, 30000); // Every 30 seconds
-
-    return () => {
-      clearInterval(memoryInterval);
-    };
   }, []);
 
-  const checkMemoryUsage = async () => {
-    const usage = await storageManager.getStorageUsage();
-    const usagePercent = (usage.used / usage.quota) * 100;
-    
-    if (usagePercent > 80) {
-      console.warn('Storage usage high:', usagePercent.toFixed(2) + '%');
-      // Optionally show warning to user
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) {
+      setFile(droppedFile);
+      handleUpload(droppedFile);
     }
-  };
-
-  const checkForResumeData = async (id: string) => {
-    try {
-      const savedState = await storageManager.getTransferState(id);
-      if (savedState && savedState.progress.percentage < 100) {
-        setResumeData(savedState);
-        setResumeDialogOpen(true);
-      } else {
-        initializeReceiver(id);
-      }
-    } catch (error) {
-      console.error('Error checking resume data:', error);
-      initializeReceiver(id);
-    }
-  };
-
-  const handleResumeTransfer = async () => {
-    setResumeDialogOpen(false);
-    if (resumeData && connectionId) {
-      if (resumeData.type === 'receiver') {
-        initializeReceiver(connectionId, resumeData);
-      }
-    }
-  };
-
-  const handleCancelResume = async () => {
-    setResumeDialogOpen(false);
-    if (connectionId) {
-      // Clear old data and start fresh
-      await storageManager.deleteTransferState(connectionId);
-      initializeReceiver(connectionId);
-    }
-  };
-
-  const initializeReceiver = async (id: string, resumeFrom?: TransferStateData) => {
-    try {
-      setTransferState('connecting');
-      setError(null);
-      
-      const webrtc = new WebRTCManager();
-      await webrtc.initialize(false, id);
-      
-      const transfer = new FileTransferManagerEnhanced(webrtc, id);
-      await transfer.initialize();
-      
-      transfer.setCallbacks(
-        (prog) => {
-          setProgress(prog);
-          setTransferState('transferring');
-          // Persist progress
-          ProgressPersistence.save(id, prog);
-        },
-        () => {
-          setTransferState('completed');
-          ProgressPersistence.delete(id);
-        },
-        (err) => {
-          if (err.message === 'PASSWORD_REQUIRED') {
-            setPasswordMode('verify');
-            setShowPasswordInput(true);
-            setPasswordError('This transfer is password protected');
-          } else {
-            setError(err.message);
-            setTransferState('error');
-          }
-        }
-      );
-
-      setWebrtcManager(webrtc);
-      setTransferManager(transfer);
-
-      // Restore progress if resuming
-      if (resumeFrom) {
-        setProgress({
-          bytesTransferred: resumeFrom.progress.bytesTransferred,
-          totalBytes: resumeFrom.progress.totalBytes,
-          percentage: resumeFrom.progress.percentage,
-          speed: 0,
-          timeRemaining: 0,
-        });
-      }
-
-      // Wait for connection with timeout
-      console.log('Receiver: Waiting for sender connection...');
-      const connectionTimeout = setTimeout(() => {
-        if (transfer) {
-          setError('Connection timeout. The sender may not be online or the link has expired. Please ask the sender to generate a new share link.');
-          setTransferState('error');
-          webrtc.disconnect();
-        }
-      }, 30000); // 30 seconds timeout
-
-      // Start receiving
-      transfer.receiveFiles((received) => {
-        clearTimeout(connectionTimeout);
-        setReceivedFiles(received);
-      }, resumeFrom).catch((err) => {
-        clearTimeout(connectionTimeout);
-        setError((err as Error).message);
-        setTransferState('error');
-      });
-
-    } catch (err) {
-      const errorMsg = (err as Error).message;
-      console.error('Receiver initialization error:', errorMsg);
-      setError(errorMsg || 'Failed to connect. The sender might not be online or the link is invalid.');
-      setTransferState('error');
-    }
-  };
-
-  const handleFilesSelected = useCallback((selectedFiles: File[]) => {
-    setFiles(selectedFiles);
-    setError(null);
   }, []);
 
-  const handlePasswordSet = async (pwd: string) => {
-    setPassword(pwd);
-    setShowPasswordInput(false);
-    setPasswordError('');
+  const handleUpload = async (fileToUpload: File) => {
+    setStatus('uploading');
+    setError('');
+    setUploadProgress(0);
 
-    if (passwordMode === 'set') {
-      // Continue with sending
-      proceedWithSend(pwd);
-    } else if (passwordMode === 'verify' && transferManager) {
-      // Verify and continue receiving
-      transferManager.setPassword(pwd);
-      setTransferState('connecting');
-    }
-  };
-
-  const handlePasswordVerify = async (pwd: string): Promise<boolean> => {
-    if (!passwordVerifier) return false;
-    
     try {
-      return await EncryptionManager.verifyPassword(
-        passwordVerifier.testString,
-        pwd,
-        passwordVerifier.salt,
-        passwordVerifier.iv
-      );
-    } catch {
-      return false;
-    }
-  };
-
-  const handleSend = async () => {
-    if (files.length === 0) return;
-
-    if (transferMode === 'server') {
-      // Server-based upload (like WeTransfer)
-      await handleServerUpload();
-    } else {
-      // P2P upload
-      if (usePassword && !password) {
-        setPasswordMode('set');
-        setShowPasswordInput(true);
-        return;
-      }
-      proceedWithSend(password || undefined);
-    }
-  };
-
-  const handleServerUpload = async () => {
-    try {
-      setUploading(true);
-      setTransferState('preparing');
-      setError(null);
-
-      const file = files[0]; // For now, upload first file only
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', fileToUpload);
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = (e.loaded / e.total) * 100;
+          setUploadProgress(percentComplete);
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const data = await response.json();
-      setUploadedFileUrl(data.url);
-      setShareLink(data.url);
-      setTransferState('completed');
-      setUploading(false);
-    } catch (err) {
-      setError((err as Error).message);
-      setTransferState('error');
-      setUploading(false);
-    }
-  };
-
-  const proceedWithSend = async (pwd?: string) => {
-    try {
-      setTransferState('preparing');
-      setError(null);
-
-      const webrtc = new WebRTCManager();
-      const id = await webrtc.initialize(true);
-      
-      const transfer = new FileTransferManagerEnhanced(webrtc, id);
-      await transfer.initialize();
-      
-      if (pwd) {
-        transfer.setPassword(pwd);
-      }
-      
-      transfer.setCallbacks(
-        (prog) => {
-          setProgress(prog);
-          setTransferState('transferring');
-          ProgressPersistence.save(id, prog);
-        },
-        () => {
-          setTransferState('completed');
-          ProgressPersistence.delete(id);
-        },
-        (err) => {
-          setError(err.message);
-          setTransferState('error');
+      xhr.addEventListener('load', () => {
+        if (xhr.status === 200) {
+          const data = JSON.parse(xhr.responseText);
+          setShareUrl(data.url);
+          setStatus('success');
+        } else {
+          setError('Upload failed. Please try again.');
+          setStatus('error');
         }
-      );
+      });
 
-      setWebrtcManager(webrtc);
-      setTransferManager(transfer);
-      setConnectionId(id);
-      setShareLink(generateShareLink(id));
-      setTransferState('connecting');
+      xhr.addEventListener('error', () => {
+        setError('Upload failed. Please check your connection.');
+        setStatus('error');
+      });
 
-      // Wait for recipient to connect, then start sending
-      (async () => {
-        try {
-          await webrtc.waitForConnection(60000); // Reduced to 60 seconds
-          
-          setTransferState('transferring');
-          await transfer.sendFiles(files);
-        } catch (err) {
-          const errorMessage = (err as Error).message;
-          setError(errorMessage);
-          setTransferState('error');
-          console.error('Transfer error:', err);
-        }
-      })();
+      xhr.open('POST', '/api/upload');
+      xhr.send(formData);
     } catch (err) {
-      setError((err as Error).message);
-      setTransferState('error');
+      setError('Upload failed: ' + (err as Error).message);
+      setStatus('error');
     }
   };
 
-  const handlePauseResume = () => {
-    if (!transferManager) return;
-    
-    if (isPaused) {
-      transferManager.resume();
-      setIsPaused(false);
-    } else {
-      transferManager.pause();
-      setIsPaused(true);
-    }
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleReset = async () => {
-    if (webrtcManager) {
-      webrtcManager.disconnect();
-    }
-    
-    if (transferManager) {
-      await transferManager.cleanup();
-    }
-    
-    if (connectionId) {
-      ProgressPersistence.delete(connectionId);
-    }
-    
-    setFiles([]);
-    setTransferState('idle');
-    setProgress(null);
-    setConnectionId(null);
-    setShareLink('');
-    setReceivedFiles([]);
-    setError(null);
-    setWebrtcManager(null);
-    setTransferManager(null);
-    setPassword(null);
-    setUsePassword(false);
-    setShowPasswordInput(false);
-    setPasswordError('');
-    setIsPaused(false);
-    
-    // Clear URL
-    if (typeof window !== 'undefined') {
-      window.history.replaceState({}, '', window.location.pathname);
-    }
+  const handleReset = () => {
+    setFile(null);
+    setStatus('idle');
+    setUploadProgress(0);
+    setShareUrl('');
+    setError('');
   };
-
-  const handleDownload = () => {
-    receivedFiles.forEach((file) => {
-      const url = URL.createObjectURL(file);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
-  };
-
-  const isReceiving = connectionId && !shareLink;
-  const isSending = shareLink.length > 0;
-
-  // Monitor tab visibility to warn sender
-  useEffect(() => {
-    const originalTitle = document.title;
-    
-    const handleVisibilityChange = () => {
-      if (document.hidden && transferState === 'connecting' && isSending) {
-        setTabHidden(true);
-        document.title = '⚠️ Return to tab - P2P File Share';
-        console.warn('Tab hidden while waiting for connection - this may cause issues');
-      } else {
-        setTabHidden(false);
-        document.title = originalTitle;
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.title = originalTitle;
-    };
-  }, [transferState, isSending]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
       {/* Header */}
-      <header className="container mx-auto px-4 py-6 flex justify-between items-center">
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="flex items-center space-x-2"
-        >
-          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
-            <Send className="w-6 h-6 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent">
-            P2P File Share Pro
+      <header className="container mx-auto px-4 py-6">
+        <div className="text-center">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+            🍕 File Share
           </h1>
-        </motion.div>
-        <ThemeToggle />
+          <p className="text-gray-600 dark:text-gray-400">
+            Simple file sharing in your browser
+          </p>
+        </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 md:p-12"
-        >
-          <AnimatePresence mode="wait">
-            {transferState === 'idle' && !isReceiving && (
-              <motion.div
-                key="idle"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="space-y-6"
-              >
-                <div className="text-center mb-8">
-                  <h2 className="text-3xl font-bold mb-2">Share Files Securely</h2>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    Direct browser-to-browser transfers with encryption & resume capability
-                  </p>
-                </div>
-
-                {/* Transfer Mode Selector */}
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-2 border-purple-300 dark:border-purple-700 rounded-xl p-5">
-                  <h3 className="text-lg font-bold text-purple-900 dark:text-purple-300 mb-3 text-center">
-                    Choose Transfer Method
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                      onClick={() => setTransferMode('server')}
-                      className={`p-4 rounded-xl border-2 transition-all ${
-                        transferMode === 'server'
-                          ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                          : 'border-gray-300 dark:border-gray-600 hover:border-green-300'
-                      }`}
-                    >
-                      <div className="text-3xl mb-2">☁️</div>
-                      <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        Server Upload (Recommended)
-                      </h4>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        ✅ Upload once, share anytime<br/>
-                        ✅ Receiver can download even if you're offline<br/>
-                        ✅ Works like WeTransfer
-                      </p>
-                    </button>
-                    <button
-                      onClick={() => setTransferMode('p2p')}
-                      className={`p-4 rounded-xl border-2 transition-all ${
-                        transferMode === 'p2p'
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                          : 'border-gray-300 dark:border-gray-600 hover:border-blue-300'
-                      }`}
-                    >
-                      <div className="text-3xl mb-2">🔗</div>
-                      <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        P2P Direct Transfer
-                      </h4>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        🔒 Direct browser-to-browser<br/>
-                        ⚠️ Both must be online simultaneously<br/>
-                        💾 No server storage
-                      </p>
-                    </button>
-                  </div>
-                </div>
-
-                <FileDropZone
-                  onFilesSelected={handleFilesSelected}
-                  disabled={false}
-                />
-
-                {files.length > 0 && (
-                  <>
-                    {/* Password Protection Option */}
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center justify-between bg-gradient-to-r from-primary-50 to-purple-50 dark:from-primary-900/20 dark:to-purple-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <Shield className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                        <div>
-                          <p className="font-semibold text-sm">Password Protection</p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
-                            Secure your files with encryption
-                          </p>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={usePassword}
-                          onChange={(e) => setUsePassword(e.target.checked)}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                      </label>
-                    </motion.div>
-
-                    <motion.button
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      onClick={handleSend}
-                      className="w-full py-4 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-xl font-semibold text-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center space-x-2"
-                    >
-                      <Send className="w-5 h-5" />
-                      <span>Generate Share Link</span>
-                    </motion.button>
-                  </>
-                )}
-              </motion.div>
-            )}
-
-            {showPasswordInput && (
-              <motion.div
-                key="password-input"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <PasswordInput
-                  onPasswordSet={handlePasswordSet}
-                  mode={passwordMode}
-                  onVerify={passwordMode === 'verify' ? handlePasswordVerify : undefined}
-                  error={passwordError}
-                />
-              </motion.div>
-            )}
-
-            {transferState === 'preparing' && (
-              <motion.div
-                key="preparing"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-center space-y-4"
-              >
-                <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto" />
-                <p className="text-lg font-medium">Preparing secure connection...</p>
-              </motion.div>
-            )}
-
-            {transferState === 'connecting' && (
-              <motion.div
-                key="connecting"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="space-y-6"
-              >
-                {isSending && shareLink && (
-                  <>
-                    <div className="text-center mb-6">
-                      <motion.div
-                        animate={{ scale: [1, 1.1, 1] }}
-                        transition={{ repeat: Infinity, duration: 2 }}
-                        className="mb-4"
-                      >
-                        <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto" />
-                      </motion.div>
-                      <h2 className="text-2xl font-bold mb-2">Share This Link</h2>
-                      <p className="text-gray-600 dark:text-gray-400 mb-2">
-                        Waiting for recipient to connect...
-                      </p>
-                      {usePassword && (
-                        <div className="inline-flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 px-4 py-2 rounded-lg mt-2">
-                          <Shield className="w-4 h-4" />
-                          <span className="text-sm font-medium">Password Protected</span>
-                        </div>
-                      )}
-                      {tabHidden && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="mt-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
-                        >
-                          <p className="text-sm text-red-700 dark:text-red-300 font-medium">
-                            ⚠️ Tab is hidden! Return to this tab to maintain connection.
-                          </p>
-                        </motion.div>
-                      )}
-                    </div>
-                    <ShareLink link={shareLink} />
-                  </>
-                )}
-                {isReceiving && (
-                  <div className="text-center space-y-4">
-                    <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto" />
-                    <p className="text-lg font-medium">Connecting to sender...</p>
-                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 max-w-md mx-auto">
-                      <p className="text-sm text-blue-900 dark:text-blue-300 font-semibold mb-2">
-                        💡 How P2P File Sharing Works:
-                      </p>
-                      <ol className="text-xs text-blue-800 dark:text-blue-300 text-left space-y-1 list-decimal list-inside">
-                        <li>Sender must have their browser tab OPEN and WAITING</li>
-                        <li>Receiver (you) opens the link</li>
-                        <li>Both connect directly (peer-to-peer)</li>
-                        <li>Files transfer directly between browsers</li>
-                      </ol>
-                    </div>
-                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 max-w-md mx-auto">
-                      <p className="text-xs text-yellow-800 dark:text-yellow-300">
-                        ⚠️ If you're seeing this for more than 10 seconds, the sender might not be online or their tab is closed.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            )}
-
-            {transferState === 'transferring' && progress && (
-              <motion.div
-                key="transferring"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="space-y-6"
-              >
-                <div className="text-center mb-6">
-                  <h2 className="text-2xl font-bold mb-2">
-                    {isSending ? 'Sending Files...' : 'Receiving Files...'}
-                  </h2>
-                  {isPaused && (
-                    <div className="inline-flex items-center space-x-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 px-4 py-2 rounded-lg mt-2">
-                      <Pause className="w-4 h-4" />
-                      <span className="text-sm font-medium">Transfer Paused</span>
-                    </div>
-                  )}
-                </div>
-                <ProgressBar progress={progress} />
-                
-                {/* Pause/Resume Button */}
-                <div className="flex justify-center space-x-3">
-                  <button
-                    onClick={handlePauseResume}
-                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center space-x-2"
-                  >
-                    {isPaused ? (
-                      <>
-                        <Play className="w-5 h-5" />
-                        <span>Resume</span>
-                      </>
-                    ) : (
-                      <>
-                        <Pause className="w-5 h-5" />
-                        <span>Pause</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {transferState === 'completed' && (
-              <motion.div
-                key="completed"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-center space-y-6"
-              >
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 200 }}
-                >
-                  <CheckCircle2 className="w-20 h-20 text-green-500 mx-auto" />
-                </motion.div>
-                <div>
-                  <h2 className="text-3xl font-bold mb-2">
-                    {transferMode === 'server' ? 'Upload Complete!' : isSending ? 'Transfer Complete!' : 'Files Received!'}
-                  </h2>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    {transferMode === 'server' 
-                      ? 'Your file has been uploaded! Share the link below.' 
-                      : isSending 
-                        ? 'Your files have been successfully sent.' 
-                        : `${receivedFiles.length} file(s) ready to download.`
-                    }
-                  </p>
-                </div>
-                
-                {transferMode === 'server' && uploadedFileUrl && (
-                  <div className="space-y-4">
-                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
-                      <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-2">
-                        ✅ File is now available for download!
-                      </p>
-                      <p className="text-xs text-green-800 dark:text-green-300 mb-3">
-                        Anyone with this link can download the file, even if you close your browser!
-                      </p>
-                      <div className="flex items-center space-x-2 p-3 bg-white dark:bg-gray-800 rounded-lg">
-                        <input
-                          type="text"
-                          value={uploadedFileUrl}
-                          readOnly
-                          className="flex-1 bg-transparent border-none outline-none text-xs font-mono text-gray-700 dark:text-gray-300"
-                        />
-                        <button
-                          onClick={() => navigator.clipboard.writeText(uploadedFileUrl)}
-                          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold"
-                        >
-                          Copy Link
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {isReceiving && receivedFiles.length > 0 && (
-                  <motion.button
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    onClick={handleDownload}
-                    className="px-8 py-4 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-xl font-semibold text-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-lg hover:shadow-xl flex items-center space-x-2 mx-auto"
-                  >
-                    <Download className="w-5 h-5" />
-                    <span>Download {receivedFiles.length > 1 ? 'Files' : 'File'}</span>
-                  </motion.button>
-                )}
-                <button
-                  onClick={handleReset}
-                  className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center space-x-2 mx-auto"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Share More Files</span>
-                </button>
-              </motion.div>
-            )}
-
-            {transferState === 'error' && (
-              <motion.div
-                key="error"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-center space-y-6"
-              >
-                <XCircle className="w-20 h-20 text-red-500 mx-auto" />
-                <div>
-                  <h2 className="text-2xl font-bold mb-2 text-red-600 dark:text-red-400">
-                    Transfer Failed
-                  </h2>
-                  <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    {error || 'An error occurred during the transfer.'}
-                  </p>
-                  
-                  {/* Helpful explanation */}
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md mx-auto text-left">
-                    <p className="text-sm font-bold text-red-900 dark:text-red-300 mb-2">
-                      🤔 Why did this happen?
-                    </p>
-                    <ul className="text-xs text-red-800 dark:text-red-300 space-y-1">
-                      <li>• The sender closed their browser tab before you connected</li>
-                      <li>• The sender is not online right now</li>
-                      <li>• The link expired or is invalid</li>
-                      <li>• Network/firewall blocked the connection</li>
-                    </ul>
-                    <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-700">
-                      <p className="text-xs font-bold text-red-900 dark:text-red-200 mb-1">✅ Solution:</p>
-                      <p className="text-xs text-red-800 dark:text-red-300">
-                        Ask the sender to open their browser, upload the file again, and generate a NEW share link. 
-                        Make sure they keep their tab open while you connect!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={handleReset}
-                  className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Try Again
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Features */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="mt-12 grid grid-cols-1 md:grid-cols-4 gap-6"
-        >
-          {[
-            { icon: '🔒', title: 'Encrypted', desc: 'Password protection' },
-            { icon: '⚡', title: 'Fast', desc: 'Direct P2P transfer' },
-            { icon: '🔄', title: 'Resume', desc: 'Interrupt & continue' },
-            { icon: '💾', title: 'Large Files', desc: 'Optimized memory' },
-          ].map((feature, idx) => (
+      <main className="container mx-auto px-4 py-8 max-w-2xl">
+        <AnimatePresence mode="wait">
+          {status === 'idle' && (
             <motion.div
-              key={idx}
+              key="idle"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 + idx * 0.1 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl p-6 text-center shadow-lg"
+              exit={{ opacity: 0, y: -20 }}
+              className="text-center"
             >
-              <div className="text-4xl mb-3">{feature.icon}</div>
-              <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{feature.desc}</p>
+              <div
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+                className="border-4 border-dashed border-blue-300 dark:border-blue-700 rounded-3xl p-20 hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all cursor-pointer bg-white/80 dark:bg-gray-800/50 backdrop-blur"
+                onClick={() => document.getElementById('file-input')?.click()}
+              >
+                <Upload className="w-24 h-24 text-blue-500 mx-auto mb-6" />
+                <h2 className="text-3xl font-bold mb-3">Drop a file to get started</h2>
+                <p className="text-gray-600 dark:text-gray-400 text-lg">
+                  or click to browse
+                </p>
+                <input
+                  id="file-input"
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
             </motion.div>
-          ))}
-        </motion.div>
+          )}
+
+          {status === 'uploading' && (
+            <motion.div
+              key="uploading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-6"
+            >
+              <div className="text-center mb-8">
+                <Loader2 className="w-20 h-20 text-blue-500 animate-spin mx-auto mb-6" />
+                <h2 className="text-3xl font-bold mb-3">Uploading...</h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  {file?.name} ({(file!.size / 1024 / 1024).toFixed(2)} MB)
+                </p>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl">
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm mb-3">
+                    <span className="font-medium">Progress</span>
+                    <span className="font-bold text-blue-600">{uploadProgress.toFixed(0)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-4 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {status === 'success' && (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-6"
+            >
+              <div className="text-center mb-8">
+                <CheckCircle2 className="w-24 h-24 text-green-500 mx-auto mb-6" />
+                <h2 className="text-4xl font-bold mb-3">Upload Complete!</h2>
+                <p className="text-gray-600 dark:text-gray-400 text-lg">
+                  Your file is ready to share
+                </p>
+              </div>
+
+              {/* Share Link */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">
+                    Share this link:
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="text"
+                      value={shareUrl}
+                      readOnly
+                      className="flex-1 bg-gray-50 dark:bg-gray-700 px-4 py-4 rounded-xl text-sm font-mono border-2 border-gray-200 dark:border-gray-600 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={handleCopy}
+                      className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                    >
+                      {copied ? (
+                        <span className="flex items-center">
+                          <Check className="w-5 h-5 mr-2" />
+                          Copied!
+                        </span>
+                      ) : (
+                        <span className="flex items-center">
+                          <Copy className="w-5 h-5 mr-2" />
+                          Copy
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border-2 border-green-200 dark:border-green-800">
+                  <p className="text-sm text-green-800 dark:text-green-300 text-center font-medium">
+                    ✅ You can close this page now! The file will remain available for download.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleReset}
+                className="w-full py-4 bg-gray-200 dark:bg-gray-700 rounded-xl font-semibold text-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Share Another File
+              </button>
+            </motion.div>
+          )}
+
+          {status === 'error' && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center space-y-6"
+            >
+              <AlertCircle className="w-24 h-24 text-red-500 mx-auto" />
+              <h2 className="text-3xl font-bold mb-3 text-red-600 dark:text-red-400">
+                Upload Failed
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                {error}
+              </p>
+              <button
+                onClick={handleReset}
+                className="px-8 py-4 bg-gray-200 dark:bg-gray-700 rounded-xl font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Try Again
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Footer */}
       <footer className="container mx-auto px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-        <p>Production-Ready P2P File Sharing • End-to-End Encrypted • Zero Server Storage</p>
+        <p>🍕 Simple file sharing • Upload once, share anywhere • Files stored securely</p>
       </footer>
-
-      {/* Resume Dialog */}
-      <ResumeTransferDialog
-        isOpen={resumeDialogOpen}
-        transferState={resumeData}
-        onResume={handleResumeTransfer}
-        onCancel={handleCancelResume}
-      />
     </div>
   );
 }

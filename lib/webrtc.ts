@@ -66,13 +66,26 @@ export class WebRTCManager {
             serialization: 'binary'
           });
 
+          // Handle connection errors
+          conn.on('error', (err: any) => {
+            console.error('Connection error:', err);
+            reject(new Error('Failed to connect to sender. The sender may be offline or the link may be invalid.'));
+          });
+
           this.setupDataChannel(conn);
           resolve(connectionId);
         });
 
-        this.peer.on('error', (error) => {
+        this.peer.on('error', (error: any) => {
           console.error('Peer error:', error);
-          reject(error);
+          // Provide helpful error messages based on error type
+          if (error.type === 'peer-unavailable') {
+            reject(new Error('Sender is not available. Please ensure the sender has opened their browser and is waiting with the share link page open.'));
+          } else if (error.type === 'network') {
+            reject(new Error('Network error. Please check your internet connection.'));
+          } else {
+            reject(new Error('Connection failed: ' + (error.message || 'Unknown error')));
+          }
         });
       }
     });
@@ -149,9 +162,10 @@ export class WebRTCManager {
         this.dataChannel = null;
       }
       if (!connectionEstablished) {
-        console.error('Connection closed before establishing - sender may not be available');
+        console.error('Connection closed before establishing - sender is not available');
+        // This will be caught by the timeout in setupDataChannel
       } else {
-        console.log('Connection closed');
+        console.log('Connection closed gracefully');
       }
     });
   }

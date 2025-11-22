@@ -63,7 +63,7 @@ export class FileTransferManagerEnhanced {
       await this.initialize();
 
       if (!this.webrtc.isConnected()) {
-        throw new Error('Connection not ready. Please wait for recipient to connect.');
+        throw new Error('Connection not established. Please wait for recipient to connect.');
       }
 
       this.abortController = new AbortController();

@@ -11,16 +11,30 @@ export class WebRTCManager {
     this.isHost = isHost;
     
     return new Promise((resolve, reject) => {
+      const peerConfig = {
+        host: '0.peerjs.com',
+        port: 443,
+        path: '/',
+        secure: true,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ],
+          iceTransportPolicy: 'all',
+          iceCandidatePoolSize: 10
+        },
+        debug: 0
+      };
+
       if (isHost) {
         // Host creates a new peer connection
-        this.peer = new Peer({
-          host: '0.peerjs.com',
-          port: 443,
-          path: '/',
-          secure: true,
-        });
+        this.peer = new Peer(peerConfig);
 
         this.peer.on('open', (id) => {
+          console.log('Host: Peer opened with ID:', id);
           this.connectionId = id;
           resolve(id);
         });
@@ -42,17 +56,14 @@ export class WebRTCManager {
         }
 
         this.connectionId = connectionId;
-        this.peer = new Peer({
-          host: '0.peerjs.com',
-          port: 443,
-          path: '/',
-          secure: true,
-        });
+        this.peer = new Peer(peerConfig);
 
         this.peer.on('open', () => {
-          console.log('Client: Peer opened, connecting to host...');
+          console.log('Client: Peer opened, connecting to host:', connectionId);
+          
           const conn = this.peer!.connect(connectionId, {
             reliable: true,
+            serialization: 'binary'
           });
 
           this.setupDataChannel(conn);
@@ -72,18 +83,34 @@ export class WebRTCManager {
   private setupDataChannel(conn: any) {
     this.dataChannel = conn;
     
+    // Set binary data type for better performance
+    if (conn.dataChannel && conn.dataChannel.binaryType) {
+      conn.dataChannel.binaryType = 'arraybuffer';
+    }
+    
     // Check if already open
     if (conn.open) {
       console.log('Data channel already open');
       this.connectionReadyCallbacks.forEach(cb => cb());
+      this.connectionReadyCallbacks = [];
     } else {
       console.log('Data channel not open yet, waiting for open event...');
+      
+      // Add timeout for connection
+      const timeout = setTimeout(() => {
+        if (!conn.open) {
+          console.error('Data channel connection timeout');
+          conn.close();
+        }
+      }, 30000); // 30 seconds timeout
+      
+      conn.on('open', () => {
+        clearTimeout(timeout);
+        console.log('Data channel opened - connection ready!');
+        this.connectionReadyCallbacks.forEach(cb => cb());
+        this.connectionReadyCallbacks = [];
+      });
     }
-    
-    conn.on('open', () => {
-      console.log('Data channel opened - connection ready!');
-      this.connectionReadyCallbacks.forEach(cb => cb());
-    });
 
     conn.on('data', (data: any) => {
       // Convert to ArrayBuffer if needed
@@ -238,9 +265,9 @@ export class WebRTCManager {
             this.connectionReadyCallbacks.splice(index, 1);
           }
           clearInterval(checkInterval);
-          reject(new Error('Connection timeout: Waiting for recipient to connect. Please make sure the recipient has opened the share link and both browsers are on the same network or have proper NAT traversal.'));
+          reject(new Error('Connection timeout. Please ensure both parties have opened their browsers and the link is correct.'));
         }
-      }, 500); // Check every 500ms
+      }, 250); // Check every 250ms for faster connection detection
     });
   }
 }

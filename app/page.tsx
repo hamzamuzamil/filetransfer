@@ -256,7 +256,7 @@ export default function Home() {
       // Wait for recipient to connect, then start sending
       (async () => {
         try {
-          await webrtc.waitForConnection(90000);
+          await webrtc.waitForConnection(60000); // Reduced to 60 seconds
           
           setTransferState('transferring');
           await transfer.sendFiles(files);

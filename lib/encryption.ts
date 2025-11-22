@@ -57,7 +57,7 @@ export class EncryptionManager {
     
     const key = await this.deriveKey(password, actualSalt);
     const encrypted = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: actualIV },
+      { name: 'AES-GCM', iv: actualIV.buffer as ArrayBuffer },
       key,
       data
     );
@@ -82,7 +82,7 @@ export class EncryptionManager {
     
     try {
       const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: iv },
+        { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
         key,
         encryptedData
       );

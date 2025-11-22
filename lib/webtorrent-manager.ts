@@ -72,8 +72,9 @@ export class WebTorrentManager {
 
       torrent.on('error', (err) => {
         console.error('Torrent error:', err);
-        if (onError) onError(err);
-        reject(err);
+        const error = typeof err === 'string' ? new Error(err) : err;
+        if (onError) onError(error);
+        reject(error);
       });
     });
   }

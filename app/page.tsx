@@ -466,7 +466,7 @@ export default function Home() {
                   </h2>
               </div>
 
-              {!downloadedFile ? (
+                  {!downloadedFile ? (
                 <div className="space-y-6">
                   {magnetURI.includes('x.encrypted=true') && (
                     <div>
@@ -483,9 +483,42 @@ export default function Home() {
                     </div>
                   )}
 
+                  {/* Connection Status */}
+                  {isDownloading && progress.peers === 0 && progress.progress === 0 && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+                        <p className="text-yellow-800 dark:text-yellow-300 text-sm font-medium">
+                          🔍 Searching for peers... Make sure the sender is online and sharing the file.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isDownloading && progress.peers > 0 && (
+                    <div className="bg-green-50 dark:bg-green-900/20 border-2 border-green-200 dark:border-green-800 rounded-lg p-4">
+                      <p className="text-green-800 dark:text-green-300 text-sm font-medium">
+                        ✅ Connected to {progress.peers} peer{progress.peers !== 1 ? 's' : ''} - Downloading...
+                      </p>
+                    </div>
+                  )}
+
                   {error && (
                     <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
-                      {error}
+                      <p className="font-semibold mb-2">⚠️ {error}</p>
+                      <p className="text-sm">
+                        {error.includes('No peers') && (
+                          <>
+                            <strong>Possible reasons:</strong>
+                            <ul className="list-disc list-inside mt-2 space-y-1">
+                              <li>The sender closed their browser or tab</li>
+                              <li>The sender is not online</li>
+                              <li>Network connectivity issues</li>
+                            </ul>
+                            <p className="mt-2">Ask the sender to keep their browser tab open and try again.</p>
+                          </>
+                        )}
+                      </p>
                     </div>
                   )}
 
@@ -506,7 +539,7 @@ export default function Home() {
                         <div>
                           <div className="text-gray-600 dark:text-gray-400">Speed</div>
                           <div className="font-semibold text-gray-800 dark:text-white">
-                            {formatSpeed(progress.downloadSpeed)}
+                            {formatSpeed(progress.downloadSpeed) || '0 B/s'}
                           </div>
                         </div>
                         <div>
@@ -517,12 +550,12 @@ export default function Home() {
                         </div>
                         <div>
                           <div className="text-gray-600 dark:text-gray-400">Peers</div>
-                          <div className="font-semibold text-gray-800 dark:text-white">
-                            {progress.peers}
+                          <div className={`font-semibold ${progress.peers > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {progress.peers} {progress.peers === 0 ? '⚠️' : '✅'}
                           </div>
                         </div>
                       </div>
-                </div>
+                    </div>
                   )}
                 
                   <button

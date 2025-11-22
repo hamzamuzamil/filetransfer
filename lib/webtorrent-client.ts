@@ -224,13 +224,34 @@ export class WebTorrentClient {
         return;
       }
 
+      // Timeout to detect if no peers connect
+      let peerTimeout: NodeJS.Timeout | null = null;
+      let hasReceivedData = false;
+
       this.currentTorrent = this.client.add(magnetURI, (torrent) => {
         const file = torrent.files[0];
+
+        // Set timeout for peer connection (30 seconds)
+        peerTimeout = setTimeout(() => {
+          if (!hasReceivedData && torrent.numPeers === 0) {
+            onError(new Error('No peers found. Make sure the sender is online and sharing the file.'));
+          }
+        }, 30000);
+
+        // Track when we receive data
+        torrent.on('download', () => {
+          hasReceivedData = true;
+          if (peerTimeout) {
+            clearTimeout(peerTimeout);
+            peerTimeout = null;
+          }
+        });
 
         // Progress updates
         const interval = setInterval(() => {
           if (!torrent) {
             clearInterval(interval);
+            if (peerTimeout) clearTimeout(peerTimeout);
             return;
           }
 
@@ -243,6 +264,12 @@ export class WebTorrentClient {
             peers: torrent.numPeers,
             timeRemaining: torrent.timeRemaining,
           });
+
+          // Clear timeout once we have peers
+          if (torrent.numPeers > 0 && peerTimeout) {
+            clearTimeout(peerTimeout);
+            peerTimeout = null;
+          }
         }, 1000);
 
         file.getBlob((err, blob) => {

@@ -88,9 +88,13 @@ export class WebRTCManager {
       conn.dataChannel.binaryType = 'arraybuffer';
     }
     
+    // Track if connection ever succeeds
+    let connectionEstablished = false;
+    
     // Check if already open
     if (conn.open) {
       console.log('Data channel already open');
+      connectionEstablished = true;
       this.connectionReadyCallbacks.forEach(cb => cb());
       this.connectionReadyCallbacks = [];
     } else {
@@ -98,14 +102,15 @@ export class WebRTCManager {
       
       // Add timeout for connection
       const timeout = setTimeout(() => {
-        if (!conn.open) {
-          console.error('Data channel connection timeout');
+        if (!conn.open && !connectionEstablished) {
+          console.error('Data channel connection timeout - peer may not exist');
           conn.close();
         }
-      }, 30000); // 30 seconds timeout
+      }, 15000); // 15 seconds timeout
       
       conn.on('open', () => {
         clearTimeout(timeout);
+        connectionEstablished = true;
         console.log('Data channel opened - connection ready!');
         this.connectionReadyCallbacks.forEach(cb => cb());
         this.connectionReadyCallbacks = [];
@@ -134,13 +139,20 @@ export class WebRTCManager {
 
     conn.on('error', (error: Error) => {
       console.error('Connection error:', error);
+      if (!connectionEstablished) {
+        console.error('Failed to establish connection - peer may be offline');
+      }
     });
 
     conn.on('close', () => {
       if (this.dataChannel === conn) {
         this.dataChannel = null;
       }
-      console.log('Connection closed');
+      if (!connectionEstablished) {
+        console.error('Connection closed before establishing - sender may not be available');
+      } else {
+        console.log('Connection closed');
+      }
     });
   }
 

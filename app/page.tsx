@@ -116,6 +116,8 @@ export default function Home() {
   const initializeReceiver = async (id: string, resumeFrom?: TransferStateData) => {
     try {
       setTransferState('connecting');
+      setError(null);
+      
       const webrtc = new WebRTCManager();
       await webrtc.initialize(false, id);
       
@@ -159,12 +161,30 @@ export default function Home() {
         });
       }
 
+      // Wait for connection with timeout
+      console.log('Receiver: Waiting for sender connection...');
+      const connectionTimeout = setTimeout(() => {
+        if (transfer) {
+          setError('Connection timeout. The sender may not be online or the link has expired. Please ask the sender to generate a new share link.');
+          setTransferState('error');
+          webrtc.disconnect();
+        }
+      }, 30000); // 30 seconds timeout
+
       // Start receiving
-      await transfer.receiveFiles((received) => {
+      transfer.receiveFiles((received) => {
+        clearTimeout(connectionTimeout);
         setReceivedFiles(received);
-      }, resumeFrom);
+      }, resumeFrom).catch((err) => {
+        clearTimeout(connectionTimeout);
+        setError((err as Error).message);
+        setTransferState('error');
+      });
+
     } catch (err) {
-      setError((err as Error).message);
+      const errorMsg = (err as Error).message;
+      console.error('Receiver initialization error:', errorMsg);
+      setError(errorMsg || 'Failed to connect. The sender might not be online or the link is invalid.');
       setTransferState('error');
     }
   };
@@ -489,6 +509,12 @@ export default function Home() {
                   <div className="text-center space-y-4">
                     <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto" />
                     <p className="text-lg font-medium">Connecting to sender...</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Make sure the sender has their browser open with the share link page visible.
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      Connection will timeout after 30 seconds if sender is not available.
+                    </p>
                   </div>
                 )}
               </motion.div>
